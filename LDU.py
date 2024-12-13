@@ -1,14 +1,13 @@
 import cv2
 import streamlit as st
 import time
-import dlib
-from imutils import face_utils
+import mediapipe as mp
 from scipy.spatial import distance as dist
 
-LANDMARKS_PATH = "shape_predictor_68_face_landmarks.dat"
-detector = dlib.get_frontal_face_detector()
-landmark_predictor = dlib.shape_predictor(LANDMARKS_PATH)
+# Mediapipe face mesh setup
+mp_face_mesh = mp.solutions.face_mesh
 
+# EAR calculation function
 def calculate_EAR(eye):
     y1 = dist.euclidean(eye[1], eye[5])
     y2 = dist.euclidean(eye[2], eye[4])
@@ -16,9 +15,9 @@ def calculate_EAR(eye):
     EAR = (y1 + y2) / x1
     return EAR
 
-
+# Mediapipe-based Blink Detection Function
 def LDU(message_container, face_placeholder):
-    live= False
+    live = False
     cap = cv2.VideoCapture(0)
     blink_detected = False
     start_time = time.time()
@@ -27,51 +26,60 @@ def LDU(message_container, face_placeholder):
     with message_container:
         st.info("Starting Blink Detection... Please blink to verify you are live. 👁️")
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    # Mediapipe face mesh solution
+    with mp_face_mesh.FaceMesh(
+        static_image_mode=False,
+        max_num_faces=1,
+        refine_landmarks=True,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
+    ) as face_mesh:
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = detector(gray)
-
-        for face in faces:
-            x, y, w, h = face.left(), face.top(), face.width(), face.height()
-            cropped_face = frame[y:y + h, x:x + w]
-
-            cropped_face_resized = cv2.resize(cropped_face, (200, 200))
-            cropped_face_resized = cv2.cvtColor(cropped_face_resized, cv2.COLOR_BGR2RGB)
-
-            face_placeholder.image(cropped_face_resized, caption="Live Face", use_container_width=False)
-
-            shape = landmark_predictor(gray, face)
-            shape = face_utils.shape_to_np(shape)
-
-            lefteye = shape[face_utils.FACIAL_LANDMARKS_IDXS["left_eye"][0]:face_utils.FACIAL_LANDMARKS_IDXS["left_eye"][1]]
-            righteye = shape[face_utils.FACIAL_LANDMARKS_IDXS["right_eye"][0]:face_utils.FACIAL_LANDMARKS_IDXS["right_eye"][1]]
-
-            left_EAR = calculate_EAR(lefteye)
-            right_EAR = calculate_EAR(righteye)
-
-            if (left_EAR + right_EAR) / 2 < 0.45:
-                blink_detected = True
+        while True:
+            ret, frame = cap.read()
+            if not ret:
                 break
 
-        if time.time() - start_time > 10:
-            with message_container:
-                st.error("No blink detected! Not a Live Person.")
-            break
+            # Convert the image to RGB
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = face_mesh.process(rgb_frame)
 
-            
+            if results.multi_face_landmarks:
+                for face_landmarks in results.multi_face_landmarks:
+                    # Extracting landmarks for eyes
+                    left_eye = [
+                        (face_landmarks.landmark[i].x * frame.shape[1],
+                         face_landmarks.landmark[i].y * frame.shape[0])
+                        for i in [33, 160, 158, 133, 153, 144]
+                    ]
+                    right_eye = [
+                        (face_landmarks.landmark[i].x * frame.shape[1],
+                         face_landmarks.landmark[i].y * frame.shape[0])
+                        for i in [362, 385, 387, 263, 373, 380]
+                    ]
 
-        if blink_detected:
-            with message_container:
-                st.success("Blink Detected! User is a Live Person.")
-                live=True
-            break
+                    # EAR Calculation
+                    left_EAR = calculate_EAR(left_eye)
+                    right_EAR = calculate_EAR(right_eye)
+
+                    if (left_EAR + right_EAR) / 2 < 0.45:
+                        blink_detected = True
+                        break
+
+            if time.time() - start_time > 10:
+                with message_container:
+                    st.error("No blink detected! Not a Live Person.")
+                break
+
+            if blink_detected:
+                with message_container:
+                    st.success("Blink Detected! User is a Live Person.")
+                    live = True
+                break
 
     cap.release()
     return live
+
     
 
 

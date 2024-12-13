@@ -1,7 +1,6 @@
 opencv-python
 streamlit
 imutils
-dlib
+mediapipe
 scikit-learn
 joblib
-cmake
