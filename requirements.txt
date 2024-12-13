@@ -4,3 +4,4 @@ imutils
 dlib
 scikit-learn
 joblib
+cmake
